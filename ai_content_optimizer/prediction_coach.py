@@ -36,6 +36,16 @@ OUTPUT_TAB = "Prediction_Coach"
 PLATFORMS = ["Twitter", "Instagram", "LinkedIn", "YouTube"]
 
 # ===============================
+# CONFIG CHECK (FIX)
+# ===============================
+def is_configured():
+    return (
+        SERVICE_ACCOUNT_FILE
+        and SPREADSHEET_ID
+        and os.path.exists(SERVICE_ACCOUNT_FILE)
+    )
+
+# ===============================
 # GOOGLE SHEETS CONNECTION
 # ===============================
 def connect_sheet():
@@ -110,19 +120,25 @@ def predict_viral_score(base_score, text):
 # MAIN ENGINE
 # ===============================
 def run_prediction_coach():
-    print("🔮 Running Prediction Coach...\n")
+    if not is_configured():
+        return {
+            "status": "error",
+            "message": "Google Sheets credentials not configured"
+        }
 
     sheet = connect_sheet()
     ws_ab = sheet.worksheet(SOURCE_TAB)
     df = pd.DataFrame(ws_ab.get_all_records())
 
     if df.empty:
-        print("⚠️ No A/B testing data found.")
-        return
+        return {
+            "status": "empty",
+            "message": "No A/B testing data found"
+        }
 
     results = []
 
-    for idx, row in df.iterrows():
+    for _, row in df.iterrows():
         text_a = row.get("Variant_A", "")
         text_b = row.get("Variant_B", "")
         score_a = float(row.get("Score_A", 0))
@@ -151,11 +167,6 @@ def run_prediction_coach():
             final_text,
         ])
 
-        print(f"✅ Row {idx+1}: {winner} → {platform} ({viral_score})")
-
-    # ===============================
-    # WRITE TO GOOGLE SHEETS
-    # ===============================
     try:
         ws_out = sheet.worksheet(OUTPUT_TAB)
         ws_out.clear()
@@ -172,12 +183,17 @@ def run_prediction_coach():
     ]
 
     ws_out.update([headers] + results)
-    print("\n✅ Prediction results saved to Google Sheets")
 
     send_slack(f"🔮 Prediction Coach completed for {len(results)} items")
 
+    return {
+        "status": "success",
+        "rows_processed": len(results)
+    }
+
 # ===============================
-# RUN
+# RUN (CLI ONLY)
 # ===============================
 if __name__ == "__main__":
-    run_prediction_coach()
+    result = run_prediction_coach()
+    print(result)

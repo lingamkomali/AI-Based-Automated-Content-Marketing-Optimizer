@@ -50,6 +50,16 @@ HEADERS = [
 ]
 
 # ===============================
+# CONFIG CHECK (FIX)
+# ===============================
+def is_configured():
+    return (
+        SERVICE_ACCOUNT_FILE
+        and SPREADSHEET_ID
+        and os.path.exists(SERVICE_ACCOUNT_FILE)
+    )
+
+# ===============================
 # GOOGLE SHEETS CONNECTION
 # ===============================
 def connect_spreadsheet():
@@ -80,10 +90,8 @@ def send_slack(message):
 def calculate_metrics(df):
     metrics = {}
 
-    # ---- TIMESTAMP FIRST ----
     metrics["Run_Timestamp"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    # ---- SENTIMENT METRICS ----
     if "Sentiment" in df.columns:
         metrics["Positive_%"] = round((df["Sentiment"] == "Positive").mean() * 100, 1)
         metrics["Neutral_%"]  = round((df["Sentiment"] == "Neutral").mean() * 100, 1)
@@ -99,7 +107,6 @@ def calculate_metrics(df):
     else:
         metrics["Avg_Sentiment"] = 0
 
-    # ---- PLATFORM COUNTS ----
     if "Platform" in df.columns:
         metrics["Twitter_Posts"] = int((df["Platform"] == "twitter").sum())
         metrics["Reddit_Posts"]  = int((df["Platform"] == "reddit").sum())
@@ -107,7 +114,6 @@ def calculate_metrics(df):
     else:
         metrics["Twitter_Posts"] = metrics["Reddit_Posts"] = metrics["YouTube_Posts"] = 0
 
-    # ---- OPTIMIZATION SCORE ----
     if "Optimization_Score" in df.columns:
         df["Optimization_Score"] = pd.to_numeric(
             df["Optimization_Score"], errors="coerce"
@@ -118,14 +124,11 @@ def calculate_metrics(df):
     else:
         metrics["Avg_Optimization_Score"] = 0
 
-    # ---- ENGAGEMENT SCORE (PREDICTED) ----
-    # Engagement = avg of Optimization + normalized Sentiment
     if "Optimization_Score" in df.columns and "Sentiment_Score" in df.columns:
         df["Sentiment_Normalized"] = ((df["Sentiment_Score"] + 3) / 6) * 10
         df["Engagement_Score"] = (
             df["Optimization_Score"] + df["Sentiment_Normalized"]
         ) / 2
-
         metrics["Avg_Engagement_Score"] = round(
             df["Engagement_Score"].mean(), 2
         )
@@ -146,13 +149,11 @@ def upload_metrics(sheet, metrics):
         except gspread.exceptions.WorksheetNotFound:
             ws = sheet.add_worksheet(title=METRICS_SHEET, rows="200", cols="20")
 
-        # Write headers ONLY once
         existing_headers = ws.row_values(1)
         if existing_headers != HEADERS:
             ws.clear()
             ws.append_row(HEADERS)
 
-        # Append metrics row
         ws.append_row([metrics[h] for h in HEADERS])
         print("✅ Performance metrics appended successfully")
 
@@ -160,18 +161,24 @@ def upload_metrics(sheet, metrics):
         print("❌ Failed to upload metrics:", e)
 
 # ===============================
-# ENTRY POINT
+# ENTRY POINT (SAFE)
 # ===============================
-if __name__ == "__main__":
-    print("📊 Running Performance Metrics Hub...\n")
+def run_performance_metrics():
+    if not is_configured():
+        return {
+            "status": "error",
+            "message": "Google Sheets credentials not configured"
+        }
 
     sheet = connect_spreadsheet()
     source_ws = sheet.worksheet(SOURCE_SHEET)
     df = pd.DataFrame(source_ws.get_all_records())
 
     if df.empty:
-        print("⚠️ No data found in Content_Creation sheet")
-        exit()
+        return {
+            "status": "empty",
+            "message": "No data found in Content_Creation sheet"
+        }
 
     metrics = calculate_metrics(df)
     upload_metrics(sheet, metrics)
@@ -183,4 +190,14 @@ if __name__ == "__main__":
         f"Avg Engagement Score: {metrics['Avg_Engagement_Score']}"
     )
 
-    print("\n🎉 Performance Metrics completed successfully")
+    return {
+        "status": "success",
+        "metrics": metrics
+    }
+
+# ===============================
+# RUN (CLI ONLY)
+# ===============================
+if __name__ == "__main__":
+    result = run_performance_metrics()
+    print(result)

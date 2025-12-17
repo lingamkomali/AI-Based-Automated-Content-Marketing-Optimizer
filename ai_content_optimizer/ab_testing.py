@@ -33,8 +33,15 @@ SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 SOURCE_SHEET = "Content_Creation"
 AB_SHEET = "AB_Testing"
 
-if not SERVICE_ACCOUNT_FILE or not SPREADSHEET_ID:
-    raise EnvironmentError("❌ Google Sheets config missing in .env")
+# ===============================
+# CONFIG CHECK (FIX)
+# ===============================
+def is_configured():
+    return (
+        SERVICE_ACCOUNT_FILE
+        and SPREADSHEET_ID
+        and os.path.exists(SERVICE_ACCOUNT_FILE)
+    )
 
 # ===============================
 # CONNECT TO GOOGLE SHEETS
@@ -110,23 +117,27 @@ def score_content(text):
 # MAIN A/B TESTING
 # ===============================
 def run_ab_testing():
-    print("\n⚖️ Starting A/B Testing Engine...\n")
+    if not is_configured():
+        return {
+            "status": "error",
+            "message": "Google Sheets credentials not configured"
+        }
 
     sheet = connect_spreadsheet()
     source_ws = sheet.worksheet(SOURCE_SHEET)
     rows = source_ws.get_all_records()
 
     if not rows:
-        print("⚠️ No content found in Content_Creation")
-        return
+        return {
+            "status": "empty",
+            "message": "No content found in Content_Creation sheet"
+        }
 
-    # ---------- Output Sheet ----------
     try:
         ab_ws = sheet.worksheet(AB_SHEET)
     except gspread.exceptions.WorksheetNotFound:
         ab_ws = sheet.add_worksheet(title=AB_SHEET, rows="1000", cols="15")
 
-    # ---------- Headers ----------
     headers = [
         "Test_ID",
         "Timestamp",
@@ -146,8 +157,6 @@ def run_ab_testing():
     processed = 0
 
     for idx, row in enumerate(rows, start=1):
-        print(f"🔄 Processing row {idx}...")
-
         original = row.get("Generated_Content", "").strip()
         if not original:
             continue
@@ -173,14 +182,18 @@ def run_ab_testing():
             winner,
         ])
 
-        print(f"✅ Winner: {winner} (A={score_a}, B={score_b})")
         processed += 1
 
     send_slack(f"⚖️ A/B Testing completed for {processed} items")
-    print(f"\n🎉 A/B Testing finished: {processed} rows processed")
+
+    return {
+        "status": "success",
+        "processed": processed
+    }
 
 # ===============================
-# RUN
+# RUN (CLI ONLY)
 # ===============================
 if __name__ == "__main__":
-    run_ab_testing()
+    result = run_ab_testing()
+    print(result)

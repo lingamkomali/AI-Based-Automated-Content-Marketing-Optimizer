@@ -7,11 +7,13 @@ Milestone 2 – Content Generation Engine
 ✔ Platform-optimized prompts
 ✔ Google Sheets + Slack integration
 ✔ Secure .env usage
+✔ Streamlit UI appended (NO terminal input when Streamlit runs)
 """
 
 # ===============================
 # IMPORTS
 # ===============================
+import streamlit as st
 import os
 from datetime import datetime
 import requests
@@ -34,7 +36,6 @@ SPREADSHEET_ID = os.getenv("SPREADSHEET_ID")
 
 SLACK_WEBHOOK_URL = os.getenv("SLACK_WEBHOOK_URL")
 
-# Dedicated worksheet for AI content
 CONTENT_SHEET_NAME = "Content_Creation"
 
 if not GEMINI_API_KEY or not GEMINI_MODEL:
@@ -59,10 +60,8 @@ def connect_sheet():
     client = gspread.authorize(creds)
     return client.open_by_key(SPREADSHEET_ID)
 
+
 def get_content_sheet(spreadsheet):
-    """
-    Creates Content_Creation sheet if missing
-    """
     try:
         ws = spreadsheet.worksheet(CONTENT_SHEET_NAME)
     except gspread.exceptions.WorksheetNotFound:
@@ -92,7 +91,7 @@ def send_slack(message):
         pass
 
 # ===============================
-# CONTENT GENERATION
+# CONTENT GENERATION (ORIGINAL)
 # ===============================
 def generate_content(topic, platform):
     platform = platform.lower()
@@ -101,7 +100,7 @@ def generate_content(topic, platform):
         prompt = f"""
 You are a genuine Reddit user.
 
-Write a **natural discussion post (120–180 words)** about:
+Write a natural discussion post (120–180 words) about:
 "{topic}"
 
 Rules:
@@ -113,7 +112,7 @@ Rules:
 
     elif platform == "twitter":
         prompt = f"""
-Write **2 tweets** about:
+Write 2 tweets about:
 "{topic}"
 
 Rules:
@@ -159,7 +158,7 @@ def save_content(ws, topic, platform, content):
     )
 
 # ===============================
-# MAIN
+# ORIGINAL CLI MAIN (UNCHANGED)
 # ===============================
 def main():
     print("\n🚀 AI Content Creation Engine Started\n")
@@ -181,8 +180,7 @@ def main():
         send_slack(
             f"✅ *AI Content Created*\n"
             f"Topic: {topic}\n"
-            f"Platform: {platform}\n"
-            f"Saved in Content_Creation sheet"
+            f"Platform: {platform}"
         )
 
         print("\n✅ Content saved to Content_Creation sheet")
@@ -193,7 +191,58 @@ def main():
         print(e)
 
 # ===============================
-# ENTRY POINT
+# STREAMLIT UI (NEW FEATURE)
+# ===============================
+def streamlit_app():
+    st.set_page_config(
+        page_title="AI Content Marketing Optimizer",
+        page_icon="🚀",
+        layout="wide"
+    )
+
+    st.title("🚀 AI-Based Automated Content Marketing Optimizer")
+    st.caption("Milestone 2 – Streamlit Content Generator")
+
+    topic = st.text_input("Topic / Product Name")
+    platform = st.selectbox(
+        "Platform",
+        ["reddit", "twitter", "youtube"]
+    )
+
+    if st.button("🚀 Generate Content"):
+        if not topic:
+            st.warning("Please enter a topic")
+            return
+
+        with st.spinner("Generating content..."):
+            content = generate_content(topic, platform)
+
+        st.subheader("📄 Generated Content")
+        st.text_area("", content, height=300)
+
+        try:
+            spreadsheet = connect_sheet()
+            ws = get_content_sheet(spreadsheet)
+            save_content(ws, topic, platform, content)
+
+            send_slack(
+                f"✅ *AI Content Created (Streamlit)*\n"
+                f"Topic: {topic}\n"
+                f"Platform: {platform}"
+            )
+
+            st.success("✅ Content saved to Google Sheet & Slack notified")
+
+        except Exception as e:
+            st.error(f"❌ Error saving content: {e}")
+
+# ===============================
+# ENTRY POINT FIX (CRITICAL)
 # ===============================
 if __name__ == "__main__":
-    main()
+    if os.getenv("STREAMLIT_SERVER_RUNNING") == "true":
+        streamlit_app()
+    else:
+        main()
+
+
