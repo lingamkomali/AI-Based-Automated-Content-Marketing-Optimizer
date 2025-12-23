@@ -6,3 +6,10 @@ google-auth
 google-auth-oauthlib
 tweepy
 praw
+streamlit
+pandas
+google-generativeai
+textblob
+gspread
+oauth2client
+
